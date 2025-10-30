@@ -1,0 +1,39 @@
+services:
+ db:
+   image: mysql:8.0
+   container_name: rpw_mysql
+   environment:
+     MYSQL_ROOT_PASSWORD: rootpass
+     MYSQL_DATABASE: rpwdb
+     MYSQL_USER: rpwuser
+     MYSQL_PASSWORD: rpwpass
+   ports:
+     - "3306:3306"
+   volumes:
+     - mysql-data:/var/lib/mysql
+     - ./mysql-init:/docker-entrypoint-initdb.d
+   healthcheck:
+     test: ["CMD-SHELL", "mysqladmin ping -h localhost -p$${MYSQL_ROOT_PASSWORD} --silent"]
+     interval: 10s
+     timeout: 5s
+     retries: 10
+
+ tomcat:
+   image: tomcat:11.0-jdk21-temurin
+   container_name: rpw_tomcat
+   depends_on:
+     db:
+       condition: service_healthy
+   ports:
+     - "8080:8080"
+   environment:
+     TZ: Asia/Jakarta
+     JAVA_OPTS: "-Duser.timezone=Asia/Jakarta"
+   volumes:
+     - ./:/usr/local/tomcat/webapps/rpw
+     - ./logs:/usr/local/tomcat/logs
+
+volumes:
+  mysql-data: {}
+
+
