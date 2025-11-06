@@ -1,0 +1,8 @@
+Title,Author,ISBN,Category,Quantity,Description
+"Head First Java","Kathy Sierra","978-0596009205","Programming",5,"A Brain-Friendly Guide to Java"
+"Effective Java","Joshua Bloch","978-0134685991","Programming",3,"Best Practices for the Java Platform"
+"The Art of Computer Programming","Donald Knuth","978-0201896831","Computer Science",2,"Fundamental Algorithms"
+"Harry Potter and the Philosopher's Stone","J.K. Rowling","978-0439708180","Fiction",10,"The first Harry Potter book"
+"The Great Gatsby","F. Scott Fitzgerald","978-0743273565","Fiction",4,"Classic American novel"
+"Sapiens","Yuval Noah Harari","978-0062316097","Non-Fiction",6,"A Brief History of Humankind"
+"Atomic Habits","James Clear","978-0735211292","Non-Fiction",5,"An Easy Way to Build Good Habits"

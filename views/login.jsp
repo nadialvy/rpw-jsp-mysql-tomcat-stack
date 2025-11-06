@@ -13,7 +13,7 @@
   </head>
   <body class="bg-light">
     <%
-      if (session.getAttribute("username") != null) {
+      if (session.getAttribute("userId") != null) {
         response.sendRedirect("home.jsp");
         return;
       }
@@ -26,9 +26,12 @@
         if (usernameField == null || usernameField.isEmpty() || password == null || password.isEmpty()) {
           err = "Semua field wajib diisi";
         } else {
-          String username = verifyLoginAndGetUsername(usernameField, password);
-          if (username != null) {
-            session.setAttribute("username", username);
+          User user = verifyLogin(usernameField, password);
+          if (user != null) {
+            session.setAttribute("userId", user.id);
+            session.setAttribute("username", user.username);
+            session.setAttribute("fullName", user.fullName);
+            session.setAttribute("role", user.role);
             response.sendRedirect("home.jsp");
             return;
           } else {
