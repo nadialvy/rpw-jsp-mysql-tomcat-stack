@@ -1,89 +1,310 @@
+<%@ page import="java.sql.*" %>
 <%@ include file="../classes/auth.jsp" %>
-<% 
-Integer userId = (Integer) session.getAttribute("userId");
-String role = (String) session.getAttribute("role");
 
-if (userId == null) { 
-  response.sendRedirect("login.jsp"); 
-  return; 
-}
-
-if (!"admin".equals(role)) {
-  response.sendRedirect("home.jsp");
-  return;
-}
-
-String action = request.getParameter("action");
-String idParam = request.getParameter("id");
-
-// Handle actions
-if ("POST".equalsIgnoreCase(request.getMethod()) && action != null && idParam != null) {
-    int borrowingId = Integer.parseInt(idParam);
-    try (Connection conn = getConnection()) {
-        if ("approve".equals(action)) {
-            String sql = "UPDATE borrowings SET status = 'approved' WHERE id = ?";
-            PreparedStatement ps = conn.prepareStatement(sql);
-            ps.setInt(1, borrowingId);
-            ps.executeUpdate();
-            ps.close();
-        } else if ("reject".equals(action)) {
-            // First get book_id to restore available count
-            String getSql = "SELECT book_id FROM borrowings WHERE id = ?";
-            PreparedStatement getPs = conn.prepareStatement(getSql);
-            getPs.setInt(1, borrowingId);
-            ResultSet rs = getPs.executeQuery();
-            if (rs.next()) {
-                int bookId = rs.getInt("book_id");
-                // Update borrowing status
-                String updateSql = "UPDATE borrowings SET status = 'rejected' WHERE id = ?";
-                PreparedStatement updatePs = conn.prepareStatement(updateSql);
-                updatePs.setInt(1, borrowingId);
-                updatePs.executeUpdate();
-                updatePs.close();
-                
-                // Restore book availability
-                String bookSql = "UPDATE books SET available = available + 1 WHERE id = ?";
-                PreparedStatement bookPs = conn.prepareStatement(bookSql);
-                bookPs.setInt(1, bookId);
-                bookPs.executeUpdate();
-                bookPs.close();
-            }
-            rs.close();
-            getPs.close();
-        } else if ("return".equals(action)) {
-            // Get book_id
-            String getSql = "SELECT book_id FROM borrowings WHERE id = ?";
-            PreparedStatement getPs = conn.prepareStatement(getSql);
-            getPs.setInt(1, borrowingId);
-            ResultSet rs = getPs.executeQuery();
-            if (rs.next()) {
-                int bookId = rs.getInt("book_id");
-                // Update borrowing
-                String updateSql = "UPDATE borrowings SET status = 'returned', return_date = CURDATE() WHERE id = ?";
-                PreparedStatement updatePs = conn.prepareStatement(updateSql);
-                updatePs.setInt(1, borrowingId);
-                updatePs.executeUpdate();
-                updatePs.close();
-                
-                // Restore book availability
-                String bookSql = "UPDATE books SET available = available + 1 WHERE id = ?";
-                PreparedStatement bookPs = conn.prepareStatement(bookSql);
-                bookPs.setInt(1, bookId);
-                bookPs.executeUpdate();
-                bookPs.close();
-            }
-            rs.close();
-            getPs.close();
+<%!
+    /**
+     * BorrowingManager Class
+     * Handles borrowing management operations including approval, rejection, and returns
+     */
+    public class BorrowingManager {
+        private HttpServletRequest request;
+        private HttpServletResponse response;
+        private HttpSession session;
+        private JspWriter out;
+        
+        // Constructor
+        public BorrowingManager(HttpServletRequest request, HttpServletResponse response, 
+                               HttpSession session, JspWriter out) {
+            this.request = request;
+            this.response = response;
+            this.session = session;
+            this.out = out;
         }
-    } catch (Exception e) {
-        e.printStackTrace();
+        
+        /**
+         * Validate user authentication and authorization
+         */
+        public boolean validateAccess() throws Exception {
+            Integer userId = (Integer) session.getAttribute("userId");
+            String role = (String) session.getAttribute("role");
+            
+            if (userId == null) {
+                response.sendRedirect("login.jsp");
+                return false;
+            }
+            
+            if (!"admin".equals(role)) {
+                response.sendRedirect("home.jsp");
+                return false;
+            }
+            
+            return true;
+        }
+        
+        /**
+         * Process approve action
+         */
+        public void processApprove(int borrowingId) throws Exception {
+            Connection conn = null;
+            PreparedStatement ps = null;
+            
+            try {
+                conn = getConnection();
+                String sql = "UPDATE borrowings SET status = 'approved' WHERE id = ?";
+                ps = conn.prepareStatement(sql);
+                ps.setInt(1, borrowingId);
+                ps.executeUpdate();
+            } finally {
+                if (ps != null) ps.close();
+                if (conn != null) conn.close();
+            }
+        }
+        
+        /**
+         * Process reject action
+         */
+        public void processReject(int borrowingId) throws Exception {
+            Connection conn = null;
+            PreparedStatement getPs = null;
+            PreparedStatement updatePs = null;
+            PreparedStatement bookPs = null;
+            ResultSet rs = null;
+            
+            try {
+                conn = getConnection();
+                
+                // Get book_id
+                String getSql = "SELECT book_id FROM borrowings WHERE id = ?";
+                getPs = conn.prepareStatement(getSql);
+                getPs.setInt(1, borrowingId);
+                rs = getPs.executeQuery();
+                
+                if (rs.next()) {
+                    int bookId = rs.getInt("book_id");
+                    
+                    // Update borrowing status
+                    String updateSql = "UPDATE borrowings SET status = 'rejected' WHERE id = ?";
+                    updatePs = conn.prepareStatement(updateSql);
+                    updatePs.setInt(1, borrowingId);
+                    updatePs.executeUpdate();
+                    
+                    // Restore book availability
+                    String bookSql = "UPDATE books SET available = available + 1 WHERE id = ?";
+                    bookPs = conn.prepareStatement(bookSql);
+                    bookPs.setInt(1, bookId);
+                    bookPs.executeUpdate();
+                }
+            } finally {
+                if (rs != null) rs.close();
+                if (getPs != null) getPs.close();
+                if (updatePs != null) updatePs.close();
+                if (bookPs != null) bookPs.close();
+                if (conn != null) conn.close();
+            }
+        }
+        
+        /**
+         * Process return action
+         */
+        public void processReturn(int borrowingId) throws Exception {
+            Connection conn = null;
+            PreparedStatement getPs = null;
+            PreparedStatement updatePs = null;
+            PreparedStatement bookPs = null;
+            ResultSet rs = null;
+            
+            try {
+                conn = getConnection();
+                
+                // Get book_id
+                String getSql = "SELECT book_id FROM borrowings WHERE id = ?";
+                getPs = conn.prepareStatement(getSql);
+                getPs.setInt(1, borrowingId);
+                rs = getPs.executeQuery();
+                
+                if (rs.next()) {
+                    int bookId = rs.getInt("book_id");
+                    
+                    // Update borrowing
+                    String updateSql = "UPDATE borrowings SET status = 'returned', return_date = CURDATE() WHERE id = ?";
+                    updatePs = conn.prepareStatement(updateSql);
+                    updatePs.setInt(1, borrowingId);
+                    updatePs.executeUpdate();
+                    
+                    // Restore book availability
+                    String bookSql = "UPDATE books SET available = available + 1 WHERE id = ?";
+                    bookPs = conn.prepareStatement(bookSql);
+                    bookPs.setInt(1, bookId);
+                    bookPs.executeUpdate();
+                }
+            } finally {
+                if (rs != null) rs.close();
+                if (getPs != null) getPs.close();
+                if (updatePs != null) updatePs.close();
+                if (bookPs != null) bookPs.close();
+                if (conn != null) conn.close();
+            }
+        }
+        
+        /**
+         * Handle action processing
+         */
+        public boolean processActions() throws Exception {
+            if (!"POST".equalsIgnoreCase(request.getMethod())) {
+                return false;
+            }
+            
+            String action = request.getParameter("action");
+            String idParam = request.getParameter("id");
+            
+            if (action == null || idParam == null) {
+                return false;
+            }
+            
+            int borrowingId = Integer.parseInt(idParam);
+            
+            if ("approve".equals(action)) {
+                processApprove(borrowingId);
+            } else if ("reject".equals(action)) {
+                processReject(borrowingId);
+            } else if ("return".equals(action)) {
+                processReturn(borrowingId);
+            }
+            
+            response.sendRedirect("borrowings.jsp");
+            return true;
+        }
+        
+        /**
+         * Get filter status parameter
+         */
+        public String getFilterStatus() {
+            return request.getParameter("status");
+        }
+        
+        /**
+         * Build query based on filter
+         */
+        public String buildQuery(String filterStatus) {
+            String sql = "SELECT b.*, u.full_name, u.username, bk.title FROM borrowings b " +
+                        "JOIN users u ON b.user_id = u.id " +
+                        "JOIN books bk ON b.book_id = bk.id";
+            
+            if (filterStatus != null && !filterStatus.trim().isEmpty()) {
+                sql += " WHERE b.status = ?";
+            }
+            
+            sql += " ORDER BY b.id DESC";
+            return sql;
+        }
+        
+        /**
+         * Get badge class for status
+         */
+        public String getBadgeClass(String status) {
+            if ("pending".equals(status)) return "bg-warning text-dark";
+            if ("approved".equals(status)) return "bg-success";
+            if ("returned".equals(status)) return "bg-info";
+            if ("rejected".equals(status)) return "bg-danger";
+            return "bg-secondary";
+        }
+        
+        /**
+         * Render borrowing rows
+         */
+        public void renderBorrowingRows(Connection conn, String filterStatus) throws Exception {
+            String sql = buildQuery(filterStatus);
+            PreparedStatement ps = conn.prepareStatement(sql);
+            
+            if (filterStatus != null && !filterStatus.trim().isEmpty()) {
+                ps.setString(1, filterStatus);
+            }
+            
+            ResultSet rs = ps.executeQuery();
+            boolean hasData = false;
+            
+            while (rs.next()) {
+                hasData = true;
+                renderBorrowingRow(rs);
+            }
+            
+            if (!hasData) {
+                out.println("<tr><td colspan='8' class='text-center'>No borrowings found</td></tr>");
+            }
+            
+            rs.close();
+            ps.close();
+        }
+        
+        /**
+         * Render single borrowing row
+         */
+        private void renderBorrowingRow(ResultSet rs) throws Exception {
+            int id = rs.getInt("id");
+            String fullName = rs.getString("full_name");
+            String username = rs.getString("username");
+            String title = rs.getString("title");
+            String borrowDate = rs.getDate("borrow_date").toString();
+            String dueDate = rs.getDate("due_date").toString();
+            java.sql.Date returnDateObj = rs.getDate("return_date");
+            String returnDate = returnDateObj != null ? returnDateObj.toString() : "-";
+            String status = rs.getString("status");
+            String badgeClass = getBadgeClass(status);
+            
+            out.println("<tr>");
+            out.println("    <td>" + id + "</td>");
+            out.println("    <td><strong>" + fullName + "</strong><br><small class='text-muted'>" + username + "</small></td>");
+            out.println("    <td>" + title + "</td>");
+            out.println("    <td>" + borrowDate + "</td>");
+            out.println("    <td>" + dueDate + "</td>");
+            out.println("    <td>" + returnDate + "</td>");
+            out.println("    <td><span class='badge " + badgeClass + "'>" + status.toUpperCase() + "</span></td>");
+            out.println("    <td>");
+            
+            if ("pending".equals(status)) {
+                out.println("        <form method='post' class='d-inline'>");
+                out.println("            <input type='hidden' name='id' value='" + id + "'>");
+                out.println("            <input type='hidden' name='action' value='approve'>");
+                out.println("            <button type='submit' class='btn btn-sm btn-success'>Approve</button>");
+                out.println("        </form>");
+                out.println("        <form method='post' class='d-inline'>");
+                out.println("            <input type='hidden' name='id' value='" + id + "'>");
+                out.println("            <input type='hidden' name='action' value='reject'>");
+                out.println("            <button type='submit' class='btn btn-sm btn-danger'>Reject</button>");
+                out.println("        </form>");
+            } else if ("approved".equals(status)) {
+                out.println("        <form method='post' class='d-inline'>");
+                out.println("            <input type='hidden' name='id' value='" + id + "'>");
+                out.println("            <input type='hidden' name='action' value='return'>");
+                out.println("            <button type='submit' class='btn btn-sm btn-info'>Mark Returned</button>");
+                out.println("        </form>");
+            } else {
+                out.println("        <span class='text-muted'>-</span>");
+            }
+            
+            out.println("    </td>");
+            out.println("</tr>");
+        }
     }
-    response.sendRedirect("borrowings.jsp");
-    return;
-}
-
-String filterStatus = request.getParameter("status");
 %>
+
+<%
+    // Initialize BorrowingManager
+    BorrowingManager borrowingManager = new BorrowingManager(request, response, session, out);
+    
+    // Validate access
+    if (!borrowingManager.validateAccess()) {
+        return;
+    }
+    
+    // Process actions
+    if (borrowingManager.processActions()) {
+        return;
+    }
+    
+    String filterStatus = borrowingManager.getFilterStatus();
+%>
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -144,71 +365,10 @@ String filterStatus = request.getParameter("status");
                 </thead>
                 <tbody>
                 <%
-                try (Connection conn = getConnection()) {
-                    String sql = "SELECT b.*, u.full_name, u.username, bk.title FROM borrowings b " +
-                                 "JOIN users u ON b.user_id = u.id " +
-                                 "JOIN books bk ON b.book_id = bk.id";
-                    if (filterStatus != null && !filterStatus.trim().isEmpty()) {
-                        sql += " WHERE b.status = ?";
-                    }
-                    sql += " ORDER BY b.id DESC";
-                    
-                    PreparedStatement ps = conn.prepareStatement(sql);
-                    if (filterStatus != null && !filterStatus.trim().isEmpty()) {
-                        ps.setString(1, filterStatus);
-                    }
-                    
-                    ResultSet rs = ps.executeQuery();
-                    boolean hasData = false;
-                    while (rs.next()) {
-                        hasData = true;
-                        String status = rs.getString("status");
-                        String badgeClass = "bg-secondary";
-                        if ("pending".equals(status)) badgeClass = "bg-warning text-dark";
-                        else if ("approved".equals(status)) badgeClass = "bg-success";
-                        else if ("returned".equals(status)) badgeClass = "bg-info";
-                        else if ("rejected".equals(status)) badgeClass = "bg-danger";
-                %>
-                    <tr>
-                        <td><%= rs.getInt("id") %></td>
-                        <td><strong><%= rs.getString("full_name") %></strong><br><small class="text-muted"><%= rs.getString("username") %></small></td>
-                        <td><%= rs.getString("title") %></td>
-                        <td><%= rs.getDate("borrow_date") %></td>
-                        <td><%= rs.getDate("due_date") %></td>
-                        <td><%= rs.getDate("return_date") != null ? rs.getDate("return_date").toString() : "-" %></td>
-                        <td><span class="badge <%= badgeClass %>"><%= status.toUpperCase() %></span></td>
-                        <td>
-                            <% if ("pending".equals(status)) { %>
-                            <form method="post" class="d-inline">
-                                <input type="hidden" name="id" value="<%= rs.getInt("id") %>">
-                                <input type="hidden" name="action" value="approve">
-                                <button type="submit" class="btn btn-sm btn-success">Approve</button>
-                            </form>
-                            <form method="post" class="d-inline">
-                                <input type="hidden" name="id" value="<%= rs.getInt("id") %>">
-                                <input type="hidden" name="action" value="reject">
-                                <button type="submit" class="btn btn-sm btn-danger">Reject</button>
-                            </form>
-                            <% } else if ("approved".equals(status)) { %>
-                            <form method="post" class="d-inline">
-                                <input type="hidden" name="id" value="<%= rs.getInt("id") %>">
-                                <input type="hidden" name="action" value="return">
-                                <button type="submit" class="btn btn-sm btn-info">Mark Returned</button>
-                            </form>
-                            <% } else { %>
-                            <span class="text-muted">-</span>
-                            <% } %>
-                        </td>
-                    </tr>
-                <%
-                    }
-                    if (!hasData) {
-                %>
-                    <tr><td colspan="8" class="text-center">No borrowings found</td></tr>
-                <%
-                    }
-                    rs.close();
-                    ps.close();
+                try {
+                    Connection conn = getConnection();
+                    borrowingManager.renderBorrowingRows(conn, filterStatus);
+                    conn.close();
                 } catch (Exception e) {
                     out.println("<tr><td colspan='8' class='text-danger'>Error: " + e.getMessage() + "</td></tr>");
                     e.printStackTrace();

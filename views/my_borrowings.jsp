@@ -1,13 +1,176 @@
+<%@ page import="java.sql.*" %>
 <%@ include file="../classes/auth.jsp" %>
-<% 
-Integer userId = (Integer) session.getAttribute("userId");
-String role = (String) session.getAttribute("role");
 
-if (userId == null) { 
-  response.sendRedirect("login.jsp"); 
-  return; 
-}
+<%!
+    /**
+     * MyBorrowingsManager Class
+     * Handles customer's borrowing history display and statistics
+     */
+    public class MyBorrowingsManager {
+        private HttpServletRequest request;
+        private HttpServletResponse response;
+        private HttpSession session;
+        private JspWriter out;
+        
+        private Integer userId;
+        
+        // Constructor
+        public MyBorrowingsManager(HttpServletRequest request, HttpServletResponse response, 
+                                  HttpSession session, JspWriter out) {
+            this.request = request;
+            this.response = response;
+            this.session = session;
+            this.out = out;
+            this.userId = (Integer) session.getAttribute("userId");
+        }
+        
+        /**
+         * Validate user authentication
+         */
+        public boolean validateAccess() throws Exception {
+            if (userId == null) {
+                response.sendRedirect("login.jsp");
+                return false;
+            }
+            return true;
+        }
+        
+        /**
+         * Get count by status
+         */
+        public int getCountByStatus(String status) throws Exception {
+            Connection conn = null;
+            PreparedStatement ps = null;
+            ResultSet rs = null;
+            
+            try {
+                conn = getConnection();
+                String sql = "SELECT COUNT(*) as cnt FROM borrowings WHERE user_id = ? AND status = ?";
+                ps = conn.prepareStatement(sql);
+                ps.setInt(1, userId);
+                ps.setString(2, status);
+                rs = ps.executeQuery();
+                rs.next();
+                return rs.getInt("cnt");
+            } finally {
+                if (rs != null) rs.close();
+                if (ps != null) ps.close();
+                if (conn != null) conn.close();
+            }
+        }
+        
+        /**
+         * Render status card
+         */
+        public void renderStatusCard(String status, String bgColor) throws Exception {
+            int count = getCountByStatus(status);
+            out.println("<div class='col-md-3'>");
+            out.println("    <div class='card text-white " + bgColor + "'>");
+            out.println("        <div class='card-body text-center'>");
+            out.println("            <h5>" + capitalize(status) + "</h5>");
+            out.println("            <h2>" + count + "</h2>");
+            out.println("        </div>");
+            out.println("    </div>");
+            out.println("</div>");
+        }
+        
+        /**
+         * Get badge class for status
+         */
+        public String getBadgeClass(String status) {
+            if ("pending".equals(status)) return "bg-warning text-dark";
+            if ("approved".equals(status)) return "bg-success";
+            if ("returned".equals(status)) return "bg-info";
+            if ("rejected".equals(status)) return "bg-danger";
+            return "bg-secondary";
+        }
+        
+        /**
+         * Check if borrowing is overdue
+         */
+        public boolean isOverdue(java.sql.Date dueDate, java.sql.Date returnDate, String status) {
+            if (!"approved".equals(status)) return false;
+            if (returnDate != null) return false;
+            java.sql.Date today = new java.sql.Date(System.currentTimeMillis());
+            return dueDate.before(today);
+        }
+        
+        /**
+         * Render borrowing table rows
+         */
+        public void renderBorrowingRows(Connection conn) throws Exception {
+            String sql = "SELECT b.*, bk.title, bk.author FROM borrowings b " +
+                        "JOIN books bk ON b.book_id = bk.id " +
+                        "WHERE b.user_id = ? ORDER BY b.id DESC";
+            
+            PreparedStatement ps = conn.prepareStatement(sql);
+            ps.setInt(1, userId);
+            ResultSet rs = ps.executeQuery();
+            
+            boolean hasData = false;
+            while (rs.next()) {
+                hasData = true;
+                renderBorrowingRow(rs);
+            }
+            
+            if (!hasData) {
+                out.println("<tr><td colspan='6' class='text-center'>No borrowing history</td></tr>");
+            }
+            
+            rs.close();
+            ps.close();
+        }
+        
+        /**
+         * Render single borrowing row
+         */
+        private void renderBorrowingRow(ResultSet rs) throws Exception {
+            String title = rs.getString("title");
+            String author = rs.getString("author");
+            java.sql.Date borrowDate = rs.getDate("borrow_date");
+            java.sql.Date dueDate = rs.getDate("due_date");
+            java.sql.Date returnDate = rs.getDate("return_date");
+            String status = rs.getString("status");
+            
+            boolean overdue = isOverdue(dueDate, returnDate, status);
+            String badgeClass = getBadgeClass(status);
+            String rowClass = overdue ? "table-danger" : "";
+            
+            out.println("<tr class='" + rowClass + "'>");
+            out.println("    <td><strong>" + title + "</strong></td>");
+            out.println("    <td>" + author + "</td>");
+            out.println("    <td>" + borrowDate + "</td>");
+            out.println("    <td>");
+            out.println("        " + dueDate);
+            if (overdue) {
+                out.println("        <span class='badge bg-danger'>OVERDUE</span>");
+            }
+            out.println("    </td>");
+            out.println("    <td>" + (returnDate != null ? returnDate.toString() : "-") + "</td>");
+            out.println("    <td><span class='badge " + badgeClass + "'>" + status.toUpperCase() + "</span></td>");
+            out.println("</tr>");
+        }
+        
+        /**
+         * Capitalize first letter
+         */
+        private String capitalize(String str) {
+            if (str == null || str.isEmpty()) return str;
+            return str.substring(0, 1).toUpperCase() + str.substring(1);
+        }
+    }
 %>
+
+<%
+    // Initialize MyBorrowingsManager
+    MyBorrowingsManager myBorrowingsManager = new MyBorrowingsManager(request, response, session, out);
+    
+    // Validate access
+    if (!myBorrowingsManager.validateAccess()) {
+        return;
+    }
+%>
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -37,82 +200,16 @@ if (userId == null) {
         <h3 class="mb-4">📋 My Borrowing History</h3>
         
         <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card text-white bg-warning">
-                    <div class="card-body text-center">
-                        <h5>Pending</h5>
-                        <%
-                        try (Connection conn = getConnection()) {
-                            String sql = "SELECT COUNT(*) as cnt FROM borrowings WHERE user_id = ? AND status = 'pending'";
-                            PreparedStatement ps = conn.prepareStatement(sql);
-                            ps.setInt(1, userId);
-                            ResultSet rs = ps.executeQuery();
-                            rs.next();
-                            out.print("<h2>" + rs.getInt("cnt") + "</h2>");
-                            rs.close();
-                            ps.close();
-                        } catch (Exception e) {}
-                        %>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card text-white bg-success">
-                    <div class="card-body text-center">
-                        <h5>Approved</h5>
-                        <%
-                        try (Connection conn = getConnection()) {
-                            String sql = "SELECT COUNT(*) as cnt FROM borrowings WHERE user_id = ? AND status = 'approved'";
-                            PreparedStatement ps = conn.prepareStatement(sql);
-                            ps.setInt(1, userId);
-                            ResultSet rs = ps.executeQuery();
-                            rs.next();
-                            out.print("<h2>" + rs.getInt("cnt") + "</h2>");
-                            rs.close();
-                            ps.close();
-                        } catch (Exception e) {}
-                        %>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card text-white bg-info">
-                    <div class="card-body text-center">
-                        <h5>Returned</h5>
-                        <%
-                        try (Connection conn = getConnection()) {
-                            String sql = "SELECT COUNT(*) as cnt FROM borrowings WHERE user_id = ? AND status = 'returned'";
-                            PreparedStatement ps = conn.prepareStatement(sql);
-                            ps.setInt(1, userId);
-                            ResultSet rs = ps.executeQuery();
-                            rs.next();
-                            out.print("<h2>" + rs.getInt("cnt") + "</h2>");
-                            rs.close();
-                            ps.close();
-                        } catch (Exception e) {}
-                        %>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card text-white bg-danger">
-                    <div class="card-body text-center">
-                        <h5>Rejected</h5>
-                        <%
-                        try (Connection conn = getConnection()) {
-                            String sql = "SELECT COUNT(*) as cnt FROM borrowings WHERE user_id = ? AND status = 'rejected'";
-                            PreparedStatement ps = conn.prepareStatement(sql);
-                            ps.setInt(1, userId);
-                            ResultSet rs = ps.executeQuery();
-                            rs.next();
-                            out.print("<h2>" + rs.getInt("cnt") + "</h2>");
-                            rs.close();
-                            ps.close();
-                        } catch (Exception e) {}
-                        %>
-                    </div>
-                </div>
-            </div>
+            <%
+            try {
+                myBorrowingsManager.renderStatusCard("pending", "bg-warning");
+                myBorrowingsManager.renderStatusCard("approved", "bg-success");
+                myBorrowingsManager.renderStatusCard("returned", "bg-info");
+                myBorrowingsManager.renderStatusCard("rejected", "bg-danger");
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            %>
         </div>
         
         <div class="table-responsive">
@@ -129,53 +226,10 @@ if (userId == null) {
                 </thead>
                 <tbody>
                 <%
-                try (Connection conn = getConnection()) {
-                    String sql = "SELECT b.*, bk.title, bk.author FROM borrowings b " +
-                                 "JOIN books bk ON b.book_id = bk.id " +
-                                 "WHERE b.user_id = ? ORDER BY b.id DESC";
-                    
-                    PreparedStatement ps = conn.prepareStatement(sql);
-                    ps.setInt(1, userId);
-                    ResultSet rs = ps.executeQuery();
-                    
-                    boolean hasData = false;
-                    while (rs.next()) {
-                        hasData = true;
-                        String status = rs.getString("status");
-                        String badgeClass = "bg-secondary";
-                        if ("pending".equals(status)) badgeClass = "bg-warning text-dark";
-                        else if ("approved".equals(status)) badgeClass = "bg-success";
-                        else if ("returned".equals(status)) badgeClass = "bg-info";
-                        else if ("rejected".equals(status)) badgeClass = "bg-danger";
-                        
-                        // Check if overdue
-                        java.sql.Date dueDate = rs.getDate("due_date");
-                        java.sql.Date returnDate = rs.getDate("return_date");
-                        java.sql.Date today = new java.sql.Date(System.currentTimeMillis());
-                        boolean isOverdue = "approved".equals(status) && dueDate.before(today);
-                %>
-                    <tr class="<%= isOverdue ? "table-danger" : "" %>">
-                        <td><strong><%= rs.getString("title") %></strong></td>
-                        <td><%= rs.getString("author") %></td>
-                        <td><%= rs.getDate("borrow_date") %></td>
-                        <td>
-                            <%= dueDate %>
-                            <% if (isOverdue) { %>
-                            <span class="badge bg-danger">OVERDUE</span>
-                            <% } %>
-                        </td>
-                        <td><%= returnDate != null ? returnDate.toString() : "-" %></td>
-                        <td><span class="badge <%= badgeClass %>"><%= status.toUpperCase() %></span></td>
-                    </tr>
-                <%
-                    }
-                    if (!hasData) {
-                %>
-                    <tr><td colspan="6" class="text-center">No borrowing history</td></tr>
-                <%
-                    }
-                    rs.close();
-                    ps.close();
+                try {
+                    Connection conn = getConnection();
+                    myBorrowingsManager.renderBorrowingRows(conn);
+                    conn.close();
                 } catch (Exception e) {
                     out.println("<tr><td colspan='6' class='text-danger'>Error: " + e.getMessage() + "</td></tr>");
                     e.printStackTrace();

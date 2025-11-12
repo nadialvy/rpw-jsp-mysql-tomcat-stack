@@ -1,15 +1,101 @@
+<%@ page import="java.sql.*" %>
 <%@ include file="../classes/auth.jsp" %>
-<% 
-Integer userId = (Integer) session.getAttribute("userId");
-String username = (String) session.getAttribute("username");
-String fullName = (String) session.getAttribute("fullName");
-String role = (String) session.getAttribute("role");
 
-if (userId == null) { 
-  response.sendRedirect("login.jsp"); 
-  return; 
-} 
+<%!
+    /**
+     * HomeManager Class
+     * Handles home page authentication and user session management
+     */
+    public class HomeManager {
+        private HttpServletRequest request;
+        private HttpServletResponse response;
+        private HttpSession session;
+        private JspWriter out;
+        
+        // User session variables
+        private Integer userId;
+        private String username;
+        private String fullName;
+        private String role;
+        
+        // Constructor
+        public HomeManager(HttpServletRequest request, HttpServletResponse response, 
+                          HttpSession session, JspWriter out) {
+            this.request = request;
+            this.response = response;
+            this.session = session;
+            this.out = out;
+            loadSessionData();
+        }
+        
+        /**
+         * Load user data from session
+         */
+        private void loadSessionData() {
+            this.userId = (Integer) session.getAttribute("userId");
+            this.username = (String) session.getAttribute("username");
+            this.fullName = (String) session.getAttribute("fullName");
+            this.role = (String) session.getAttribute("role");
+        }
+        
+        /**
+         * Validate user authentication
+         */
+        public boolean validateAccess() throws Exception {
+            if (userId == null) {
+                response.sendRedirect("login.jsp");
+                return false;
+            }
+            return true;
+        }
+        
+        /**
+         * Check if user is admin
+         */
+        public boolean isAdmin() {
+            return "admin".equals(role);
+        }
+        
+        /**
+         * Get user ID
+         */
+        public Integer getUserId() {
+            return userId;
+        }
+        
+        /**
+         * Get username
+         */
+        public String getUsername() {
+            return username;
+        }
+        
+        /**
+         * Get full name
+         */
+        public String getFullName() {
+            return fullName;
+        }
+        
+        /**
+         * Get user role
+         */
+        public String getRole() {
+            return role;
+        }
+    }
 %>
+
+<%
+    // Initialize HomeManager
+    HomeManager homeManager = new HomeManager(request, response, session, out);
+    
+    // Validate access - if false, return immediately
+    if (!homeManager.validateAccess()) {
+        return;
+    }
+%>
+
 <!DOCTYPE html>
 <html>
   <head>
@@ -32,7 +118,9 @@ if (userId == null) {
             <li class="nav-item">
               <a class="nav-link active" href="home.jsp">Home</a>
             </li>
-            <% if ("admin".equals(role)) { %>
+            <%
+            if (homeManager.isAdmin()) {
+            %>
             <li class="nav-item">
               <a class="nav-link" href="books.jsp">Manage Books</a>
             </li>
@@ -48,17 +136,21 @@ if (userId == null) {
                 <li><a class="dropdown-item" href="borrowing_export.jsp">Export Borrowings</a></li>
               </ul>
             </li>
-            <% } else { %>
+            <%
+            } else {
+            %>
             <li class="nav-item">
               <a class="nav-link" href="customer_books.jsp">Browse Books</a>
             </li>
             <li class="nav-item">
               <a class="nav-link" href="my_borrowings.jsp">My Borrowings</a>
             </li>
-            <% } %>
+            <%
+            }
+            %>
           </ul>
           <div class="d-flex align-items-center text-white">
-            <span class="me-3">Hi, <b><%= fullName %></b> (<%= role %>)</span>
+            <span class="me-3">Hi, <b><%= homeManager.getFullName() %></b> (<%= homeManager.getRole() %>)</span>
             <a href="logout.jsp" class="btn btn-outline-light btn-sm">Logout</a>
           </div>
         </div>
@@ -69,7 +161,9 @@ if (userId == null) {
       <h3 class="mb-4">Welcome to Library Management System</h3>
       
       <div class="row">
-        <% if ("admin".equals(role)) { %>
+        <%
+        if (homeManager.isAdmin()) {
+        %>
         <div class="col-md-4 mb-3">
           <div class="card text-white bg-primary">
             <div class="card-body">
@@ -97,7 +191,9 @@ if (userId == null) {
             </div>
           </div>
         </div>
-        <% } else { %>
+        <%
+        } else {
+        %>
         <div class="col-md-6 mb-3">
           <div class="card text-white bg-primary">
             <div class="card-body">
@@ -116,7 +212,9 @@ if (userId == null) {
             </div>
           </div>
         </div>
-        <% } %>
+        <%
+        }
+        %>
       </div>
     </div>
     

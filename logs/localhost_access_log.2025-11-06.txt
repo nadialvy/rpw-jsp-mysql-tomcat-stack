@@ -110,3 +110,4 @@
 172.18.0.1 - - [06/Nov/2025:14:58:54 +0700] "GET /rpw/views/home.jsp HTTP/1.1" 200 3363
 172.18.0.1 - - [06/Nov/2025:14:58:55 +0700] "GET /rpw/views/book_import.jsp HTTP/1.1" 200 3043
 172.18.0.1 - - [06/Nov/2025:14:59:03 +0700] "POST /rpw/views/book_import.jsp HTTP/1.1" 200 3218
+172.18.0.1 - - [06/Nov/2025:15:00:03 +0700] "GET /rpw/views/home.jsp HTTP/1.1" 200 3363

@@ -1,77 +1,203 @@
+<%@ page import="java.sql.*" %>
 <%@ include file="../classes/auth.jsp" %>
-<% 
-Integer userId = (Integer) session.getAttribute("userId");
-String role = (String) session.getAttribute("role");
 
-if (userId == null) { 
-  response.sendRedirect("login.jsp"); 
-  return; 
-}
-
-if (!"admin".equals(role)) {
-  response.sendRedirect("home.jsp");
-  return;
-}
-
-String idParam = request.getParameter("id");
-if (idParam == null) {
-    response.sendRedirect("books.jsp");
-    return;
-}
-
-int bookId = Integer.parseInt(idParam);
-
-if ("POST".equalsIgnoreCase(request.getMethod())) {
-    try (Connection conn = getConnection()) {
-        // Check if book has active borrowings
-        String checkSql = "SELECT COUNT(*) as cnt FROM borrowings WHERE book_id = ? AND status IN ('pending', 'approved')";
-        PreparedStatement checkPs = conn.prepareStatement(checkSql);
-        checkPs.setInt(1, bookId);
-        ResultSet rs = checkPs.executeQuery();
-        rs.next();
-        int activeBorrowings = rs.getInt("cnt");
-        rs.close();
-        checkPs.close();
+<%!
+    /**
+     * BookDeleteManager Class
+     * Handles book deletion operations including validation and database removal
+     */
+    public class BookDeleteManager {
+        private HttpServletRequest request;
+        private HttpServletResponse response;
+        private HttpSession session;
+        private JspWriter out;
         
-        if (activeBorrowings > 0) {
-            response.sendRedirect("books.jsp?message=Cannot delete book with active borrowings!");
-            return;
+        private int bookId;
+        private String bookTitle = "";
+        
+        // Constructor
+        public BookDeleteManager(HttpServletRequest request, HttpServletResponse response, 
+                                HttpSession session, JspWriter out) {
+            this.request = request;
+            this.response = response;
+            this.session = session;
+            this.out = out;
         }
         
-        // Delete the book
-        String sql = "DELETE FROM books WHERE id = ?";
-        PreparedStatement ps = conn.prepareStatement(sql);
-        ps.setInt(1, bookId);
-        ps.executeUpdate();
-        ps.close();
-        response.sendRedirect("books.jsp?message=Book deleted successfully!");
-        return;
-    } catch (Exception e) {
-        response.sendRedirect("books.jsp?message=Error deleting book: " + e.getMessage());
-        e.printStackTrace();
-        return;
+        /**
+         * Validate user authentication and authorization
+         */
+        public boolean validateAccess() throws Exception {
+            Integer userId = (Integer) session.getAttribute("userId");
+            String role = (String) session.getAttribute("role");
+            
+            if (userId == null) {
+                response.sendRedirect("login.jsp");
+                return false;
+            }
+            
+            if (!"admin".equals(role)) {
+                response.sendRedirect("home.jsp");
+                return false;
+            }
+            
+            return true;
+        }
+        
+        /**
+         * Validate and get book ID from parameter
+         */
+        public boolean validateBookId() throws Exception {
+            String idParam = request.getParameter("id");
+            if (idParam == null || idParam.isEmpty()) {
+                response.sendRedirect("books.jsp");
+                return false;
+            }
+            
+            try {
+                this.bookId = Integer.parseInt(idParam);
+                return true;
+            } catch (NumberFormatException e) {
+                response.sendRedirect("books.jsp");
+                return false;
+            }
+        }
+        
+        /**
+         * Check if book has active borrowings
+         */
+        public int checkActiveBorrowings() throws Exception {
+            Connection conn = null;
+            PreparedStatement ps = null;
+            ResultSet rs = null;
+            
+            try {
+                conn = getConnection();
+                String sql = "SELECT COUNT(*) as cnt FROM borrowings WHERE book_id = ? AND status IN ('pending', 'approved')";
+                ps = conn.prepareStatement(sql);
+                ps.setInt(1, bookId);
+                rs = ps.executeQuery();
+                rs.next();
+                int count = rs.getInt("cnt");
+                return count;
+            } finally {
+                if (rs != null) rs.close();
+                if (ps != null) ps.close();
+                if (conn != null) conn.close();
+            }
+        }
+        
+        /**
+         * Delete book from database
+         */
+        public boolean deleteBook() throws Exception {
+            Connection conn = null;
+            PreparedStatement ps = null;
+            
+            try {
+                conn = getConnection();
+                String sql = "DELETE FROM books WHERE id = ?";
+                ps = conn.prepareStatement(sql);
+                ps.setInt(1, bookId);
+                ps.executeUpdate();
+                return true;
+            } catch (Exception e) {
+                e.printStackTrace();
+                return false;
+            } finally {
+                if (ps != null) ps.close();
+                if (conn != null) conn.close();
+            }
+        }
+        
+        /**
+         * Process deletion
+         */
+        public boolean processDeletion() throws Exception {
+            if (!"POST".equalsIgnoreCase(request.getMethod())) {
+                return false;
+            }
+            
+            int activeBorrowings = checkActiveBorrowings();
+            
+            if (activeBorrowings > 0) {
+                response.sendRedirect("books.jsp?message=Cannot delete book with active borrowings!");
+                return true;
+            }
+            
+            if (deleteBook()) {
+                response.sendRedirect("books.jsp?message=Book deleted successfully!");
+                return true;
+            } else {
+                response.sendRedirect("books.jsp?message=Error deleting book");
+                return true;
+            }
+        }
+        
+        /**
+         * Load book title for confirmation
+         */
+        public boolean loadBookTitle() throws Exception {
+            Connection conn = null;
+            PreparedStatement ps = null;
+            ResultSet rs = null;
+            
+            try {
+                conn = getConnection();
+                String sql = "SELECT title FROM books WHERE id = ?";
+                ps = conn.prepareStatement(sql);
+                ps.setInt(1, bookId);
+                rs = ps.executeQuery();
+                
+                if (rs.next()) {
+                    this.bookTitle = rs.getString("title");
+                    return true;
+                } else {
+                    response.sendRedirect("books.jsp");
+                    return false;
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                return false;
+            } finally {
+                if (rs != null) rs.close();
+                if (ps != null) ps.close();
+                if (conn != null) conn.close();
+            }
+        }
+        
+        // Getters
+        public String getBookTitle() {
+            return bookTitle;
+        }
     }
-}
-
-// Get book info for confirmation
-String bookTitle = "";
-try (Connection conn = getConnection()) {
-    String sql = "SELECT title FROM books WHERE id = ?";
-    PreparedStatement ps = conn.prepareStatement(sql);
-    ps.setInt(1, bookId);
-    ResultSet rs = ps.executeQuery();
-    if (rs.next()) {
-        bookTitle = rs.getString("title");
-    } else {
-        response.sendRedirect("books.jsp");
-        return;
-    }
-    rs.close();
-    ps.close();
-} catch (Exception e) {
-    e.printStackTrace();
-}
 %>
+
+<%
+    // Initialize BookDeleteManager
+    BookDeleteManager bookDeleteManager = new BookDeleteManager(request, response, session, out);
+    
+    // Validate access
+    if (!bookDeleteManager.validateAccess()) {
+        return;
+    }
+    
+    // Validate book ID
+    if (!bookDeleteManager.validateBookId()) {
+        return;
+    }
+    
+    // Process deletion if POST request
+    if (bookDeleteManager.processDeletion()) {
+        return;
+    }
+    
+    // Load book title for confirmation
+    if (!bookDeleteManager.loadBookTitle()) {
+        return;
+    }
+%>
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -107,7 +233,7 @@ try (Connection conn = getConnection()) {
                         </div>
                         
                         <p>Are you sure you want to delete this book?</p>
-                        <p><strong>"<%= bookTitle %>"</strong></p>
+                        <p><strong>"<%= bookDeleteManager.getBookTitle() %>"</strong></p>
                         
                         <form method="post" class="d-flex gap-2">
                             <button type="submit" class="btn btn-danger">Yes, Delete</button>

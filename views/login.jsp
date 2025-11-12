@@ -1,4 +1,112 @@
+<%@ page import="java.sql.*" %>
 <%@ include file="../classes/auth.jsp" %>
+
+<%!
+    /**
+     * LoginManager Class
+     * Handles user authentication and login operations
+     */
+    public class LoginManager {
+        private HttpServletRequest request;
+        private HttpServletResponse response;
+        private HttpSession session;
+        private JspWriter out;
+        
+        private String errorMessage;
+        
+        // Constructor
+        public LoginManager(HttpServletRequest request, HttpServletResponse response, 
+                           HttpSession session, JspWriter out) {
+            this.request = request;
+            this.response = response;
+            this.session = session;
+            this.out = out;
+        }
+        
+        /**
+         * Check if user is already logged in
+         */
+        public boolean isLoggedIn() throws Exception {
+            if (session.getAttribute("userId") != null) {
+                response.sendRedirect("home.jsp");
+                return true;
+            }
+            return false;
+        }
+        
+        /**
+         * Validate login credentials
+         */
+        public boolean validateInput(String username, String password) {
+            if (username == null || username.isEmpty()) {
+                errorMessage = "Username is required";
+                return false;
+            }
+            
+            if (password == null || password.isEmpty()) {
+                errorMessage = "Password is required";
+                return false;
+            }
+            
+            return true;
+        }
+        
+        /**
+         * Process login
+         */
+        public boolean processLogin() throws Exception {
+            if (!"POST".equalsIgnoreCase(request.getMethod())) {
+                return false;
+            }
+            
+            String username = request.getParameter("username");
+            String password = request.getParameter("password");
+            
+            if (!validateInput(username, password)) {
+                return false;
+            }
+            
+            User user = verifyLogin(username, password);
+            
+            if (user != null) {
+                session.setAttribute("userId", user.id);
+                session.setAttribute("username", user.username);
+                session.setAttribute("fullName", user.fullName);
+                session.setAttribute("role", user.role);
+                response.sendRedirect("home.jsp");
+                return true;
+            } else {
+                errorMessage = "Username atau password salah";
+                return false;
+            }
+        }
+        
+        /**
+         * Get error message
+         */
+        public String getErrorMessage() {
+            return errorMessage;
+        }
+    }
+%>
+
+<%
+    // Initialize LoginManager
+    LoginManager loginManager = new LoginManager(request, response, session, out);
+    
+    // Check if already logged in
+    if (loginManager.isLoggedIn()) {
+        return;
+    }
+    
+    // Process login
+    if (loginManager.processLogin()) {
+        return;
+    }
+    
+    String err = loginManager.getErrorMessage();
+%>
+
 <!DOCTYPE html>
 <html>
   <head>
@@ -12,34 +120,6 @@
     <title>Login</title>
   </head>
   <body class="bg-light">
-    <%
-      if (session.getAttribute("userId") != null) {
-        response.sendRedirect("home.jsp");
-        return;
-      }
-
-      String err = null;
-      if ("POST".equalsIgnoreCase(request.getMethod())) {
-        String usernameField = request.getParameter("username");
-        String password = request.getParameter("password");
-
-        if (usernameField == null || usernameField.isEmpty() || password == null || password.isEmpty()) {
-          err = "Semua field wajib diisi";
-        } else {
-          User user = verifyLogin(usernameField, password);
-          if (user != null) {
-            session.setAttribute("userId", user.id);
-            session.setAttribute("username", user.username);
-            session.setAttribute("fullName", user.fullName);
-            session.setAttribute("role", user.role);
-            response.sendRedirect("home.jsp");
-            return;
-          } else {
-            err = "Username atau password salah";
-          }
-        }
-      }
-    %>
     <div class="container py-5">
       <div class="row justify-content-center">
         <div class="col-md-4">
@@ -62,9 +142,13 @@
                 />
                 <button class="btn btn-primary w-100">Login</button>
               </form>
-              <% if (err != null) { %>
+              <%
+              if (err != null) {
+              %>
               <div class="mt-3 text-danger small"><%= err %></div>
-              <% } %>
+              <%
+              }
+              %>
             </div>
           </div>
         </div>
